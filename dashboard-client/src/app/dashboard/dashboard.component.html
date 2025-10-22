@@ -1,59 +1,122 @@
 <div class="dashboard-container">
   <div class="dashboard-header">
-    <h1>Analytics Dashboard</h1>
-    <button class="btn-logout" (click)="authService.signOut()">
-      Đăng xuất
-    </button>
-  </div>
-
-  <div class="dashboard-controls">
-    <div class="control-group">
-      <label for="site-select">Chọn Site:</label>
-      <select 
-        id="site-select" 
-        [(ngModel)]="selectedSiteId" 
-        (change)="onSiteChange()"
-        class="form-control"
-      >
-        <option value="">-- Chọn site --</option>
-        <option *ngFor="let site of sites" [value]="site.id">
-          {{ site.site_name }}
-        </option>
-      </select>
-    </div>
-
-    <div class="control-group">
-      <label for="date-from">Từ ngày:</label>
-      <input 
-        type="date" 
-        id="date-from" 
-        [(ngModel)]="dateFrom" 
-        (change)="onDateChange()"
-        class="form-control"
-      >
-    </div>
-
-    <button 
-      class="btn-primary" 
-      (click)="loadAnalytics()" 
-      [disabled]="isLoading || !selectedSiteId || !dateFrom"
-    >
-      {{ isLoading ? 'Đang tải...' : 'Tải dữ liệu' }}
-    </button>
-  </div>
-
-  <div class="error-message" *ngIf="errorMessage">
-    {{ errorMessage }}
-  </div>
-
-  <div class="analytics-content" *ngIf="analyticsData">
-    <div class="analytics-card">
-      <h3>Dữ liệu Analytics</h3>
-      <pre>{{ analyticsData | json }}</pre>
+    <div class="header-content">
+      <div class="logo-section">
+        <h1>ClickMeter</h1>
+        <p>Analytics Dashboard</p>
+      </div>
+      <button class="btn-logout" (click)="authService.signOut()">
+        <i class="logout-icon">↪</i>
+        Đăng xuất
+      </button>
     </div>
   </div>
 
-  <div class="no-data" *ngIf="!analyticsData && !isLoading && !errorMessage">
-    <p>Chọn site và ngày để xem dữ liệu analytics</p>
+  <div class="dashboard-main">
+    <div class="controls-section">
+      <div class="controls-card">
+        <h2>Thiết lập Analytics</h2>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="site-select">
+              <i class="icon">🌐</i>
+              Chọn Site
+            </label>
+            <select 
+              id="site-select" 
+              [(ngModel)]="selectedSiteId" 
+              (change)="onSiteChange()"
+              class="form-control"
+            >
+              <option value="">-- Chọn site --</option>
+              <option *ngFor="let site of sites" [value]="site.id">
+                {{ site.site_name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="date-from">
+              <i class="icon">📅</i>
+              Từ ngày
+            </label>
+            <input 
+              type="date" 
+              id="date-from" 
+              [(ngModel)]="dateFrom" 
+              (change)="onDateChange()"
+              class="form-control"
+            >
+          </div>
+        </div>
+
+        <button 
+          class="btn-primary" 
+          (click)="loadAnalytics()" 
+          [disabled]="isLoading || !selectedSiteId || !dateFrom"
+        >
+          <i class="btn-icon" *ngIf="!isLoading">📊</i>
+          <span *ngIf="isLoading" class="spinner"></span>
+          {{ isLoading ? 'Đang tải...' : 'Tải dữ liệu Analytics' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="content-section">
+      <div class="error-message" *ngIf="errorMessage">
+        <i class="error-icon">⚠</i>
+        {{ errorMessage }}
+      </div>
+
+      <div class="analytics-content" *ngIf="analyticsData">
+        <div class="analytics-card">
+          <div class="card-header">
+            <h3>
+              <i class="icon">📈</i>
+              Dữ liệu Analytics
+            </h3>
+            <div class="card-info">
+              <span class="info-item">
+                <strong>Site:</strong> {{ getSelectedSiteName() }}
+              </span>
+              <span class="info-item">
+                <strong>Khoảng thời gian:</strong> {{ analyticsData['from'] }} - {{ analyticsData['to'] }}
+              </span>
+            </div>
+          </div>
+          
+          <div class="analytics-data">
+            <div class="data-summary" *ngIf="analyticsData['cloudflare']?.['data']?.['viewer']?.['zones']?.[0]?.['httpRequestsAdaptiveGroups']">
+              <div class="summary-item">
+                <div class="summary-value">{{ getTotalRequests() }}</div>
+                <div class="summary-label">Tổng Requests</div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-value">{{ getTotalBytes() }}</div>
+                <div class="summary-label">Tổng Bytes</div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-value">{{ getCachedRequests() }}</div>
+                <div class="summary-label">Cached Requests</div>
+              </div>
+            </div>
+            
+            <div class="raw-data">
+              <h4>Dữ liệu chi tiết:</h4>
+              <pre class="json-display">{{ analyticsData['cloudflare'] | json }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="no-data" *ngIf="!analyticsData && !isLoading && !errorMessage">
+        <div class="no-data-content">
+          <i class="no-data-icon">📊</i>
+          <h3>Chưa có dữ liệu</h3>
+          <p>Chọn site và ngày để xem dữ liệu analytics từ Cloudflare</p>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

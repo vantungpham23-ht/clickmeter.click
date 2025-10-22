@@ -75,13 +75,23 @@ serve(async (req) => {
       });
     }
 
-    // 6. Chuẩn bị GraphQL query và variables
-    const fromTime = (date_from ?? new Date().toISOString().slice(0,10)) + "T00:00:00Z";
-    const toTime = new Date().toISOString();
+    // 6. Chuẩn hóa thời gian
+    // "date_from" từ UI dạng YYYY-MM-DD
+    const fromDate = (date_from ?? new Date().toISOString().slice(0,10)); // "YYYY-MM-DD"
+    // đặt mốc đầu ngày UTC
+    const from = `${fromDate}T00:00:00Z`;
+    // to = now (UTC)
+    let to = new Date().toISOString();
+    // nếu to < from (do lệch múi giờ) thì ép to = cuối ngày 'from'
+    if (new Date(to).getTime() < new Date(from).getTime()) {
+      to = `${fromDate}T23:59:59Z`;
+    }
+
+    // Chuẩn bị path (chỉ lọc khi khác "/")
     const pathVar = site.filter_path && site.filter_path !== "/" ? site.filter_path : null;
 
-    // Tạo query với hoặc không có clientRequestPath filter
-    const query = pathVar ? `
+    // Thay GraphQL bằng ADAPTIVE
+    const query = `
     query($zone: String!, $from: Time!, $to: Time!, $path: String) {
       viewer {
         zones(filter: { zoneTag: $zone }) {
@@ -89,41 +99,25 @@ serve(async (req) => {
             limit: 2000,
             filter: {
               datetime_geq: $from,
-              datetime_leq: $to,
-              clientRequestPath: $path
-            }
-          ) {
-            dimensions { datetime, clientRequestPath }
-            sum { requests }
-          }
-        }
-      }
-    }` : `
-    query($zone: String!, $from: Time!, $to: Time!) {
-      viewer {
-        zones(filter: { zoneTag: $zone }) {
-          httpRequestsAdaptiveGroups(
-            limit: 2000,
-            filter: {
-              datetime_geq: $from,
               datetime_leq: $to
+              ${pathVar ? " , clientRequestPath: $path" : ""}
             }
           ) {
-            dimensions { datetime, clientRequestPath }
-            sum { requests }
+            dimensions { datetime ${pathVar ? ", clientRequestPath" : ""} }
+            sum { requests bytes cachedRequests cachedBytes }
           }
         }
       }
     }`;
 
-    const variables = pathVar 
-      ? { zone: site.cloudflare_zone_id, from: fromTime, to: toTime, path: pathVar }
-      : { zone: site.cloudflare_zone_id, from: fromTime, to: toTime };
+    const variables: Record<string, unknown> = {
+      zone: site.cloudflare_zone_id,
+      from, to
+    };
+    if (pathVar) variables["path"] = pathVar;
 
-    // Console.log an toàn
-    console.log("CF_GRAPHQL:", CF_GRAPHQL, "zone:", site.cloudflare_zone_id.slice(0,6)+"...");
-    console.log("Querying analytics for site:", site.id, "from:", fromTime, "to:", toTime);
-    console.log("Filter path:", pathVar || "none (all paths)");
+    // log nhẹ để debug (không in token)
+    console.log("CF zone:", site.cloudflare_zone_id, "from:", from, "to:", to, "path:", pathVar);
 
     // 7. Gọi Cloudflare
     const resp = await fetch(CF_GRAPHQL, {
@@ -145,8 +139,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       site_id: site.id,
       filter_path: site.filter_path,
-      from: fromTime, 
-      to: toTime,
+      from, 
+      to,
       cloudflare: payload
     }), { 
       status: 200, 

@@ -11,8 +11,22 @@ interface Site {
 }
 
 interface AnalyticsData {
-  // Define the structure based on your Cloudflare analytics response
-  [key: string]: any;
+  site_id: string;
+  filter_path: string;
+  from: string;
+  to: string;
+  cloudflare: {
+    data?: {
+      viewer?: {
+        zones?: Array<{
+          httpRequestsAdaptiveGroups?: Array<{
+            dimensions: { datetime: string; clientRequestPath?: string };
+            sum: { requests: number; bytes: number; cachedRequests: number; cachedBytes: number };
+          }>;
+        }>;
+      };
+    };
+  };
 }
 
 @Component({
@@ -83,5 +97,43 @@ export class DashboardComponent implements OnInit {
 
   onDateChange() {
     this.analyticsData = null;
+  }
+
+  getSelectedSiteName(): string {
+    const site = this.sites.find(s => s.id === this.selectedSiteId);
+    return site ? site.site_name : 'Chưa chọn site';
+  }
+
+  getTotalRequests(): number {
+    if (!this.analyticsData?.['cloudflare']?.['data']?.['viewer']?.['zones']?.[0]?.['httpRequestsAdaptiveGroups']) {
+      return 0;
+    }
+    return this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
+      .reduce((total: number, group: any) => total + (group.sum?.requests || 0), 0);
+  }
+
+  getTotalBytes(): string {
+    if (!this.analyticsData?.['cloudflare']?.['data']?.['viewer']?.['zones']?.[0]?.['httpRequestsAdaptiveGroups']) {
+      return '0 B';
+    }
+    const totalBytes = this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
+      .reduce((total: number, group: any) => total + (group.sum?.bytes || 0), 0);
+    return this.formatBytes(totalBytes);
+  }
+
+  getCachedRequests(): number {
+    if (!this.analyticsData?.['cloudflare']?.['data']?.['viewer']?.['zones']?.[0]?.['httpRequestsAdaptiveGroups']) {
+      return 0;
+    }
+    return this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
+      .reduce((total: number, group: any) => total + (group.sum?.cachedRequests || 0), 0);
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 }
