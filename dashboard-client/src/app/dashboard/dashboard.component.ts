@@ -21,7 +21,13 @@ interface AnalyticsData {
         zones?: Array<{
           httpRequestsAdaptiveGroups?: Array<{
             dimensions: { datetime: string; clientRequestPath?: string };
-            sum: { requests: number; bytes: number; cachedRequests: number; cachedBytes: number };
+            sum: { 
+              count: number; 
+              bytes: number; 
+              cachedCount: number; 
+              uncachedCount: number;
+              edgeResponseBytes: number;
+            };
           }>;
         }>;
       };
@@ -109,7 +115,7 @@ export class DashboardComponent implements OnInit {
       return 0;
     }
     return this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
-      .reduce((total: number, group: any) => total + (group.sum?.requests || 0), 0);
+      .reduce((total: number, group: any) => total + (group.sum?.count || 0), 0);
   }
 
   getTotalBytes(): string {
@@ -126,7 +132,7 @@ export class DashboardComponent implements OnInit {
       return 0;
     }
     return this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
-      .reduce((total: number, group: any) => total + (group.sum?.cachedRequests || 0), 0);
+      .reduce((total: number, group: any) => total + (group.sum?.cachedCount || 0), 0);
   }
 
   private formatBytes(bytes: number): string {

@@ -100,11 +100,17 @@ serve(async (req) => {
             filter: {
               datetime_geq: $from,
               datetime_leq: $to
-              ${pathVar ? " , clientRequestPath: $path" : ""}
+              ${pathVar ? ", clientRequestPath: $path" : ""}
             }
           ) {
             dimensions { datetime ${pathVar ? ", clientRequestPath" : ""} }
-            sum { requests bytes cachedRequests cachedBytes }
+            sum {
+              count              # ← field mới thay cho requests
+              bytes
+              cachedCount        # ← thay cho cachedRequests
+              uncachedCount
+              edgeResponseBytes
+            }
           }
         }
       }
