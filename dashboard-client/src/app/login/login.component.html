@@ -1,0 +1,89 @@
+<div class="login-container">
+  <div class="login-card">
+    <h2>Đăng nhập</h2>
+    
+    <!-- Simple Key Login -->
+    <div class="simple-auth-section">
+      <h3>Đăng nhập nhanh</h3>
+      <form (ngSubmit)="onKeySubmit()" #keyForm="ngForm">
+        <div class="form-group">
+          <label for="authKey">Nhập key:</label>
+          <input 
+            type="text" 
+            id="authKey" 
+            name="authKey" 
+            [(ngModel)]="authKey" 
+            required
+            class="form-control"
+            placeholder="Nhập key để đăng nhập"
+          >
+        </div>
+
+        <div class="error-message" *ngIf="keyErrorMessage">
+          {{ keyErrorMessage }}
+        </div>
+
+        <button 
+          type="submit" 
+          class="btn-primary" 
+          [disabled]="isKeyLoading || !keyForm.form.valid"
+        >
+          {{ isKeyLoading ? 'Đang đăng nhập...' : 'Đăng nhập với Key' }}
+        </button>
+      </form>
+    </div>
+
+    <div class="divider">
+      <span>hoặc</span>
+    </div>
+    
+    <!-- Regular Login -->
+    <div class="regular-auth-section">
+      <h3>Đăng nhập thông thường</h3>
+      <form (ngSubmit)="onSubmit()" #loginForm="ngForm">
+        <div class="form-group">
+          <label for="email">Email:</label>
+          <input 
+            type="email" 
+            id="email" 
+            name="email" 
+            [(ngModel)]="email" 
+            required 
+            email
+            class="form-control"
+            placeholder="Nhập email của bạn"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="password">Mật khẩu:</label>
+          <input 
+            type="password" 
+            id="password" 
+            name="password" 
+            [(ngModel)]="password" 
+            required
+            class="form-control"
+            placeholder="Nhập mật khẩu"
+          >
+        </div>
+
+        <div class="error-message" *ngIf="errorMessage">
+          {{ errorMessage }}
+        </div>
+
+        <button 
+          type="submit" 
+          class="btn-secondary" 
+          [disabled]="isLoading || !loginForm.form.valid"
+        >
+          {{ isLoading ? 'Đang đăng nhập...' : 'Đăng nhập' }}
+        </button>
+      </form>
+
+      <div class="signup-link">
+        <p>Chưa có tài khoản? <a routerLink="/signup" class="link">Đăng ký ngay</a></p>
+      </div>
+    </div>
+  </div>
+</div>

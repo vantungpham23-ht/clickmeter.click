@@ -1,0 +1,68 @@
+<div class="signup-container">
+  <div class="signup-card">
+    <h2>Đăng ký tài khoản</h2>
+    
+    <form (ngSubmit)="onSubmit()" #signupForm="ngForm">
+      <div class="form-group">
+        <label for="email">Email:</label>
+        <input 
+          type="email" 
+          id="email" 
+          name="email" 
+          [(ngModel)]="email" 
+          required 
+          email
+          class="form-control"
+          placeholder="Nhập email của bạn"
+        >
+      </div>
+
+      <div class="form-group">
+        <label for="password">Mật khẩu:</label>
+        <input 
+          type="password" 
+          id="password" 
+          name="password" 
+          [(ngModel)]="password" 
+          required
+          minlength="6"
+          class="form-control"
+          placeholder="Nhập mật khẩu (ít nhất 6 ký tự)"
+        >
+      </div>
+
+      <div class="form-group">
+        <label for="confirmPassword">Xác nhận mật khẩu:</label>
+        <input 
+          type="password" 
+          id="confirmPassword" 
+          name="confirmPassword" 
+          [(ngModel)]="confirmPassword" 
+          required
+          class="form-control"
+          placeholder="Nhập lại mật khẩu"
+        >
+      </div>
+
+      <div class="error-message" *ngIf="errorMessage">
+        {{ errorMessage }}
+      </div>
+
+      <div class="success-message" *ngIf="successMessage">
+        {{ successMessage }}
+      </div>
+
+      <button 
+        type="submit" 
+        class="btn-primary" 
+        [disabled]="isLoading || !signupForm.form.valid"
+      >
+        {{ isLoading ? 'Đang đăng ký...' : 'Đăng ký' }}
+      </button>
+    </form>
+
+    <div class="login-link">
+      <p>Đã có tài khoản? <a (click)="goToLogin()" class="link">Đăng nhập ngay</a></p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,59 @@
+<div class="dashboard-container">
+  <div class="dashboard-header">
+    <h1>Analytics Dashboard</h1>
+    <button class="btn-logout" (click)="authService.signOut()">
+      Đăng xuất
+    </button>
+  </div>
+
+  <div class="dashboard-controls">
+    <div class="control-group">
+      <label for="site-select">Chọn Site:</label>
+      <select 
+        id="site-select" 
+        [(ngModel)]="selectedSiteId" 
+        (change)="onSiteChange()"
+        class="form-control"
+      >
+        <option value="">-- Chọn site --</option>
+        <option *ngFor="let site of sites" [value]="site.id">
+          {{ site.site_name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label for="date-from">Từ ngày:</label>
+      <input 
+        type="date" 
+        id="date-from" 
+        [(ngModel)]="dateFrom" 
+        (change)="onDateChange()"
+        class="form-control"
+      >
+    </div>
+
+    <button 
+      class="btn-primary" 
+      (click)="loadAnalytics()" 
+      [disabled]="isLoading || !selectedSiteId || !dateFrom"
+    >
+      {{ isLoading ? 'Đang tải...' : 'Tải dữ liệu' }}
+    </button>
+  </div>
+
+  <div class="error-message" *ngIf="errorMessage">
+    {{ errorMessage }}
+  </div>
+
+  <div class="analytics-content" *ngIf="analyticsData">
+    <div class="analytics-card">
+      <h3>Dữ liệu Analytics</h3>
+      <pre>{{ analyticsData | json }}</pre>
+    </div>
+  </div>
+
+  <div class="no-data" *ngIf="!analyticsData && !isLoading && !errorMessage">
+    <p>Chọn site và ngày để xem dữ liệu analytics</p>
+  </div>
+</div>
