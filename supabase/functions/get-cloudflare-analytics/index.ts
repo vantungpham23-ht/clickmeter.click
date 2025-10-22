@@ -75,28 +75,55 @@ serve(async (req) => {
       });
     }
 
-    // 6. Chuẩn bị GraphQL query cơ bản
-    const query = `
+    // 6. Chuẩn bị GraphQL query và variables
+    const fromTime = (date_from ?? new Date().toISOString().slice(0,10)) + "T00:00:00Z";
+    const toTime = new Date().toISOString();
+    const pathVar = site.filter_path && site.filter_path !== "/" ? site.filter_path : null;
+
+    // Tạo query với hoặc không có clientRequestPath filter
+    const query = pathVar ? `
+    query($zone: String!, $from: Time!, $to: Time!, $path: String) {
+      viewer {
+        zones(filter: { zoneTag: $zone }) {
+          httpRequestsAdaptiveGroups(
+            limit: 2000,
+            filter: {
+              datetime_geq: $from,
+              datetime_leq: $to,
+              clientRequestPath: $path
+            }
+          ) {
+            dimensions { datetime, clientRequestPath }
+            sum { requests }
+          }
+        }
+      }
+    }` : `
     query($zone: String!, $from: Time!, $to: Time!) {
       viewer {
-        zones(filter: {zoneTag: $zone}) {
-          httpRequests1dGroups(limit: 30, filter: { datetime_geq: $from, datetime_leq: $to }) {
+        zones(filter: { zoneTag: $zone }) {
+          httpRequestsAdaptiveGroups(
+            limit: 2000,
+            filter: {
+              datetime_geq: $from,
+              datetime_leq: $to
+            }
+          ) {
+            dimensions { datetime, clientRequestPath }
             sum { requests }
-            dimensions { date: datetime }
           }
         }
       }
     }`;
 
-    // Tính khoảng thời gian
-    const from = (date_from ?? new Date().toISOString().slice(0,10)) + "T00:00:00Z";
-    const to = new Date().toISOString(); // now
-
-    const variables = { zone: site.cloudflare_zone_id, from, to };
+    const variables = pathVar 
+      ? { zone: site.cloudflare_zone_id, from: fromTime, to: toTime, path: pathVar }
+      : { zone: site.cloudflare_zone_id, from: fromTime, to: toTime };
 
     // Console.log an toàn
     console.log("CF_GRAPHQL:", CF_GRAPHQL, "zone:", site.cloudflare_zone_id.slice(0,6)+"...");
-    console.log("Querying analytics for site:", site.id, "from:", from, "to:", to);
+    console.log("Querying analytics for site:", site.id, "from:", fromTime, "to:", toTime);
+    console.log("Filter path:", pathVar || "none (all paths)");
 
     // 7. Gọi Cloudflare
     const resp = await fetch(CF_GRAPHQL, {
@@ -118,7 +145,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       site_id: site.id,
       filter_path: site.filter_path,
-      from, to,
+      from: fromTime, 
+      to: toTime,
       cloudflare: payload
     }), { 
       status: 200, 
