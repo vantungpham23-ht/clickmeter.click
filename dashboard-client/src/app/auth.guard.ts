@@ -13,12 +13,6 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   canActivate(): boolean {
-    // Check simple auth first
-    if (this.authService.checkSimpleAuth()) {
-      return true;
-    }
-    
-    // Check regular authentication
     if (this.authService.isAuthenticated()) {
       return true;
     } else {
