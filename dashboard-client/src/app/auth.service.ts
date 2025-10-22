@@ -1,5 +1,6 @@
 import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { Router } from '@angular/router';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { environment } from '../environments/environment';
 import { BehaviorSubject, Observable } from 'rxjs';
@@ -12,7 +13,10 @@ export class AuthService {
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  constructor(@Inject(PLATFORM_ID) private platformId: Object) {
+  constructor(
+    @Inject(PLATFORM_ID) private platformId: Object,
+    private router: Router
+  ) {
     if (isPlatformBrowser(this.platformId)) {
       this.supabase = createClient(environment.supabase.url, environment.supabase.anonKey);
       this.initializeAuth();
@@ -29,6 +33,11 @@ export class AuthService {
     // Listen for auth changes
     this.supabase.auth.onAuthStateChange((event, session) => {
       this.currentUserSubject.next(session?.user ?? null);
+      
+      // Redirect to login if user signs out
+      if (event === 'SIGNED_OUT') {
+        this.router.navigate(['/login']);
+      }
     });
   }
 
@@ -56,6 +65,8 @@ export class AuthService {
     }
     
     this.currentUserSubject.next(null);
+    // Redirect to login page
+    this.router.navigate(['/login']);
   }
 
   getCurrentUser(): User | null {

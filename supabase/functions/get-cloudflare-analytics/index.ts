@@ -16,100 +16,120 @@ serve(async (req) => {
   }
 
   try {
-    // 1. Khởi tạo Supabase client
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
+    // 1. Đọc secret
+    const CF_TOKEN = Deno.env.get("CLOUDFLARE_API_TOKEN");
+    const CF_GRAPHQL = Deno.env.get("GRAPHQL_ENDPOINT") ?? "https://api.cloudflare.com/client/v4/graphql";
+    if (!CF_TOKEN) {
+      console.error("❌ CLOUDFLARE_API_TOKEN not set");
+      return new Response("Server misconfigured", { status: 500 });
+    }
 
-    // 2. Xác thực người dùng
-    const { data: { user } } = await supabase.auth.getUser()
+    // 2. Tạo Supabase client để lấy user hiện hành
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } }
+    );
+
+    // 3. Lấy user
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
     if (!user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 401,
-      })
+      });
     }
 
-    // 3. Lấy input từ Dashboard
-    const { site_id, date_from } = await req.json()
-    if (!site_id || !date_from) {
-      throw new Error('Missing site_id or date_from')
+    // 4. Nhận body JSON { site_id, date_from }
+    const { site_id, date_from } = await req.json();
+    
+    // Validate site_id là uuid string
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!site_id || !uuidRegex.test(site_id)) {
+      return new Response(JSON.stringify({ error: 'Invalid site_id format' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
     }
 
-    // 4. Lấy thông tin site từ DB (đã được RLS bảo vệ)
-    const { data: siteData, error: siteError } = await supabase
+    // Validate date_from là YYYY-MM-DD (optional)
+    if (date_from && !/^\d{4}-\d{2}-\d{2}$/.test(date_from)) {
+      return new Response(JSON.stringify({ error: 'Invalid date_from format (YYYY-MM-DD)' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }
+
+    // 5. Query bảng public.sites có RLS
+    const { data: site, error: siteError } = await supabase
       .from('sites')
-      .select('cloudflare_zone_id, filter_path')
+      .select('id, user_id, cloudflare_zone_id, filter_path')
       .eq('id', site_id)
-      .eq('user_id', user.id) // RLS sẽ lo việc này, nhưng cẩn thận vẫn hơn
-      .single()
+      .eq('user_id', user.id)
+      .single();
 
-    if (siteError || !siteData) {
+    if (siteError || !site) {
       return new Response(JSON.stringify({ error: 'Site not found or access denied' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 404,
-      })
+      });
     }
 
-    // 5. Lấy API Token bí mật
-    const apiToken = Deno.env.get('CLOUDFLARE_API_TOKEN')
-    const { cloudflare_zone_id, filter_path } = siteData
-
-    // 6. Xây dựng truy vấn GraphQL
-    const graphqlQuery = {
-      query: `
-        query {
-          viewer {
-            zones(filter: { zoneTag: "${cloudflare_zone_id}" }) {
-              httpRequests1dGroups(
-                filter: {
-                  date_gt: "${date_from}",
-                  requestPath: "${filter_path}"
-                },
-                limit: 30,
-                orderBy: [date_ASC]
-              ) {
-                sum {
-                  requests
-                }
-                dimensions {
-                  date
-                }
-              }
-            }
+    // 6. Chuẩn bị GraphQL query cơ bản
+    const query = `
+    query($zone: String!, $from: Time!, $to: Time!) {
+      viewer {
+        zones(filter: {zoneTag: $zone}) {
+          httpRequests1dGroups(limit: 30, filter: { datetime_geq: $from, datetime_leq: $to }) {
+            sum { requests }
+            dimensions { date: datetime }
           }
         }
-      `
+      }
+    }`;
+
+    // Tính khoảng thời gian
+    const from = (date_from ?? new Date().toISOString().slice(0,10)) + "T00:00:00Z";
+    const to = new Date().toISOString(); // now
+
+    const variables = { zone: site.cloudflare_zone_id, from, to };
+
+    // Console.log an toàn
+    console.log("CF_GRAPHQL:", CF_GRAPHQL, "zone:", site.cloudflare_zone_id.slice(0,6)+"...");
+    console.log("Querying analytics for site:", site.id, "from:", from, "to:", to);
+
+    // 7. Gọi Cloudflare
+    const resp = await fetch(CF_GRAPHQL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${CF_TOKEN}` },
+      body: JSON.stringify({ query, variables })
+    });
+
+    if (!resp.ok) {
+      return new Response(JSON.stringify({ error: `Cloudflare API error: ${resp.status}` }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: resp.status,
+      });
     }
 
-    // 7. Gọi API Cloudflare
-    const response = await fetch('https://api.cloudflare.com/client/v4/graphql', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiToken}`
-      },
-      body: JSON.stringify(graphqlQuery)
-    })
+    const payload = await resp.json();
 
-    if (!response.ok) {
-      throw new Error(`Cloudflare API error: ${await response.text()}`)
-    }
-
-    const data = await response.json()
-
-    // 8. Trả dữ liệu về cho Dashboard
-    return new Response(
-      JSON.stringify(data.data.viewer.zones[0].httpRequests1dGroups),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    // 8. Trả về JSON gọn cho dashboard
+    return new Response(JSON.stringify({
+      site_id: site.id,
+      filter_path: site.filter_path,
+      from, to,
+      cloudflare: payload
+    }), { 
+      status: 200, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    });
 
   } catch (error) {
+    console.error("Error:", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
-    })
+    });
   }
 })
