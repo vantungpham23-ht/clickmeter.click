@@ -2,7 +2,7 @@
   "name": "clickmeter-click",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd dashboard-client && npm install && npm run build && cp -r dist/dashboard-client/* ../dist/",
+    "build": "cd dashboard-client && npm install && npm run build",
     "start": "cd dashboard-client && npm start",
     "dev": "cd dashboard-client && npm start"
   },
