@@ -2,7 +2,8 @@
   "name": "clickmeter-click",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd dashboard-client && npm install && npm run build && cp public/_redirects dist/dashboard-client/_redirects && cp src/_headers dist/dashboard-client/_headers",
+    "build": "cd dashboard-client && npm install && npm run build",
+    "postbuild": "cp dashboard-client/src/_redirects dashboard-client/dist/dashboard-client/browser/_redirects",
     "start": "cd dashboard-client && npm start",
     "dev": "cd dashboard-client && npm start"
   },
