@@ -75,81 +75,129 @@ serve(async (req) => {
       });
     }
 
-    // 6. Chuẩn hóa thời gian
-    // "date_from" từ UI dạng YYYY-MM-DD
-    const fromDate = (date_from ?? new Date().toISOString().slice(0,10)); // "YYYY-MM-DD"
-    // đặt mốc đầu ngày UTC
+    // 6. Chuẩn hóa thời gian để always to >= from
+    // date_from: "YYYY-MM-DD"
+    const fromDate = (date_from ?? new Date().toISOString().slice(0,10));
     const from = `${fromDate}T00:00:00Z`;
-    // to = now (UTC)
     let to = new Date().toISOString();
-    // nếu to < from (do lệch múi giờ) thì ép to = cuối ngày 'from'
     if (new Date(to).getTime() < new Date(from).getTime()) {
       to = `${fromDate}T23:59:59Z`;
     }
 
-    // Chuẩn bị path (chỉ lọc khi khác "/")
+    // 7. Chuẩn bị path lọc
     const pathVar = site.filter_path && site.filter_path !== "/" ? site.filter_path : null;
 
-    // Thay GraphQL bằng ADAPTIVE
-    const query = `
-    query($zone: String!, $from: Time!, $to: Time!, $path: String) {
-      viewer {
-        zones(filter: { zoneTag: $zone }) {
-          httpRequestsAdaptiveGroups(
-            limit: 2000,
-            filter: {
-              datetime_geq: $from,
-              datetime_leq: $to
-              ${pathVar ? ", clientRequestPath: $path" : ""}
-            }
-          ) {
-            dimensions { datetime ${pathVar ? ", clientRequestPath" : ""} }
-            sum {
-              count              # ← field mới thay cho requests
-              bytes
-              cachedCount        # ← thay cho cachedRequests
-              uncachedCount
-              edgeResponseBytes
-            }
-          }
-        }
-      }
-    }`;
-
-    const variables: Record<string, unknown> = {
-      zone: site.cloudflare_zone_id,
-      from, to
-    };
-    if (pathVar) variables["path"] = pathVar;
-
-    // log nhẹ để debug (không in token)
-    console.log("CF zone:", site.cloudflare_zone_id, "from:", from, "to:", to, "path:", pathVar);
-
-    // 7. Gọi Cloudflare
-    const resp = await fetch(CF_GRAPHQL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${CF_TOKEN}` },
-      body: JSON.stringify({ query, variables })
-    });
-
-    if (!resp.ok) {
-      return new Response(JSON.stringify({ error: `Cloudflare API error: ${resp.status}` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: resp.status,
+    // 8. Tạo helper gọi CF GraphQL
+    async function callCF(query: string, variables: Record<string, unknown>) {
+      const resp = await fetch(CF_GRAPHQL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${CF_TOKEN}` },
+        body: JSON.stringify({ query, variables })
       });
+      const payload = await resp.json();
+      return { ok: resp.ok, payload };
     }
 
-    const payload = await resp.json();
+    // 9. Tạo 3 "ứng viên" truy vấn và thử lần lượt đến khi cái nào thành công
+    // A) Adaptive + fields kiểu cũ
+    const qA = `
+    query($zone:String!,$from:Time!,$to:Time!,$path:String){
+      viewer{ zones(filter:{zoneTag:$zone}){
+        httpRequestsAdaptiveGroups(
+          limit:2000,
+          filter:{ datetime_geq:$from, datetime_leq:$to ${pathVar ? ", clientRequestPath:$path" : ""} }
+        ){
+          dimensions{ datetime ${pathVar ? ", clientRequestPath" : ""} }
+          sum{ requests cachedRequests bytes cachedBytes }
+        }
+      }}}
+    `;
 
-    // 8. Trả về JSON gọn cho dashboard
-    return new Response(JSON.stringify({
+    // B) Adaptive + fields kiểu mới
+    const qB = `
+    query($zone:String!,$from:Time!,$to:Time!,$path:String){
+      viewer{ zones(filter:{zoneTag:$zone}){
+        httpRequestsAdaptiveGroups(
+          limit:2000,
+          filter:{ datetime_geq:$from, datetime_leq:$to ${pathVar ? ", clientRequestPath:$path" : ""} }
+        ){
+          dimensions{ datetime ${pathVar ? ", clientRequestPath" : ""} }
+          sum{ count cachedCount uncachedCount bytes }
+        }
+      }}}
+    `;
+
+    // C) 1dGroups (theo ngày) – khi adaptive không hợp lệ
+    const qC = `
+    query($zone:String!,$from:Date!,$to:Date!){
+      viewer{ zones(filter:{zoneTag:$zone}){
+        httpRequests1dGroups(
+          limit:31,
+          filter:{ date_geq:$from, date_leq:$to }
+        ){
+          dimensions{ date }
+          sum{ requests bytes }
+        }
+      }}}
+    `;
+
+    const varsA: Record<string,unknown> = { zone: site.cloudflare_zone_id, from, to };
+    if (pathVar) varsA.path = pathVar;
+    const varsB = varsA;
+    const varsC = { zone: site.cloudflare_zone_id, from: fromDate, to: fromDate }; // 1 ngày
+
+    // Thử lần lượt
+    let used = "A"; 
+    let res = await callCF(qA, varsA);
+
+    function hasUnknownFieldError(p:any){
+      return Array.isArray(p?.errors) && p.errors.some((e:any)=>String(e?.message||"").includes("unknown field"));
+    }
+
+    if (!res.ok || hasUnknownFieldError(res.payload)) {
+      used = "B";
+      res = await callCF(qB, varsB);
+    }
+    if (!res.ok || hasUnknownFieldError(res.payload)) {
+      used = "C";
+      res = await callCF(qC, varsC);
+    }
+
+    // 10. Chuẩn hoá dữ liệu về dạng thống nhất
+    function normalize(payload:any){
+      const z = payload?.data?.viewer?.zones?.[0];
+      const groups = z?.httpRequestsAdaptiveGroups ?? z?.httpRequests1dGroups ?? [];
+      const items = groups.map((g:any)=>{
+        const d = g.dimensions || {};
+        const s = g.sum || {};
+        // lấy được gì thì map về
+        const total = s.requests ?? s.count ?? (typeof s.cachedCount==="number" && typeof s.uncachedCount==="number" ? s.cachedCount + s.uncachedCount : null);
+        const cached = s.cachedRequests ?? s.cachedCount ?? null;
+        return {
+          datetime: d.datetime ?? d.date ?? null,
+          path: d.clientRequestPath ?? null,
+          totalRequests: total,
+          cachedRequests: cached,
+          bytes: s.bytes ?? s.edgeResponseBytes ?? s.cachedBytes ?? null
+        };
+      });
+      return { items };
+    }
+
+    // 11. Console.log an toàn
+    console.log("Query used:", used, "from:", from, "to:", to, "path:", pathVar);
+
+    // 12. Trả về response
+    const body = {
       site_id: site.id,
       filter_path: site.filter_path,
-      from, 
-      to,
-      cloudflare: payload
-    }), { 
-      status: 200, 
+      from, to,
+      query_used: used,
+      cloudflare: res.payload,
+      normalized: res.payload?.data ? normalize(res.payload) : null
+    };
+    return new Response(JSON.stringify(body), { 
+      status: res.ok ? 200 : 502, 
       headers: { ...corsHeaders, "Content-Type": "application/json" } 
     });
 
