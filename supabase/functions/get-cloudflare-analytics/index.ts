@@ -169,15 +169,32 @@ serve(async (req) => {
       bytes: sumBytes(g.sum)
     }));
 
-    // 12. Console.log an toàn
-    console.log("Totals query:", resTotals.ok, "Chart query:", resChart.ok, "pathVar:", pathVar);
+    // 12. Tổng all-time từ bảng cf_daily_agg
+    const { data: aggRows, error: aggErr } = await supabase
+      .from('cf_daily_agg')
+      .select('requests,cached,bytes')
+      .eq('site_id', site.id);
 
-    // 13. Response
+    let totals_all_time = { requests: 0, cached: 0, bytes: 0 };
+    if (!aggErr && aggRows?.length) {
+      for (const r of aggRows) {
+        totals_all_time.requests += r.requests;
+        totals_all_time.cached   += r.cached;
+        totals_all_time.bytes    += r.bytes;
+      }
+    }
+
+    // 13. Console.log an toàn
+    console.log("Totals query:", resTotals.ok, "Chart query:", resChart.ok, "pathVar:", pathVar);
+    console.log("All-time totals:", totals_all_time);
+
+    // 14. Response
     return new Response(JSON.stringify({
       site_id: site.id, 
       filter_path: site.filter_path, 
       from, to,
       totals,       // luôn là tổng toàn zone trong range
+      totals_all_time,   // tổng all-time lấy từ DB
       rows,         // theo path nếu có, ngược lại theo ngày
       raw: { totals: payloadTotals, chart: payloadChart }
     }), { 
