@@ -15,7 +15,7 @@ query($zone:String!, $path:String!, $from:Time!, $to:Time!) {
           datetime_geq: $from,
           datetime_leq: $to,
           clientRequestPath: $path,
-          clientRequestMethod: "GET",
+          clientRequestMethod_in: ["GET", "HEAD"],
           responseStatus_geq: 300,
           responseStatus_lt: 400
         }
