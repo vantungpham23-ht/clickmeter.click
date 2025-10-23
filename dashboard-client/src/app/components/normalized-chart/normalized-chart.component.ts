@@ -1,7 +1,6 @@
-import { Component, Input, computed, signal } from '@angular/core';
+import { Component, Input, computed, signal, ElementRef, ViewChild, AfterViewInit, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ChartConfiguration, ChartDataset, ChartOptions, ChartType, registerables } from 'chart.js';
-import { Chart } from 'chart.js';
+import { Chart, ChartConfiguration, ChartDataset, ChartOptions, ChartType, registerables } from 'chart.js';
 
 // Đăng ký tất cả phần mở rộng Chart.js
 Chart.register(...registerables);
@@ -24,12 +23,7 @@ Chart.register(...registerables);
       </div>
       
       <div *ngIf="labels().length > 0" class="min-h-[12rem]">
-        <canvas baseChart
-          [data]="chartData()"
-          [labels]="labels()"
-          [type]="chartType"
-          [options]="options">
-        </canvas>
+        <canvas #chartCanvas></canvas>
       </div>
     </div>
   `,
@@ -39,10 +33,13 @@ Chart.register(...registerables);
     }
   `]
 })
-export class NormalizedChartComponent {
+export class NormalizedChartComponent implements AfterViewInit, OnChanges {
   @Input() set history(value: any[] | null | undefined) {
     this._history.set(Array.isArray(value) ? value : []);
   }
+
+  @ViewChild('chartCanvas', { static: false }) chartCanvas!: ElementRef<HTMLCanvasElement>;
+  private chart: Chart | null = null;
 
   // Signals
   private _history = signal<any[]>([]);
@@ -52,6 +49,16 @@ export class NormalizedChartComponent {
   normalizedFill = 'rgba(168, 85, 247, 0.15)';
   
   chartType: ChartType = 'line' as const;
+
+  ngAfterViewInit() {
+    this.createChart();
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    if (this.chart) {
+      this.updateChart();
+    }
+  }
 
   // Labels tính từ history.click_date
   labels = computed(() => {
@@ -126,6 +133,23 @@ export class NormalizedChartComponent {
       }
     }
   };
+
+  private createChart() {
+    if (this.chartCanvas && this.labels().length > 0) {
+      this.chart = new Chart(this.chartCanvas.nativeElement, {
+        type: 'line',
+        data: this.chartData() as any,
+        options: this.options
+      });
+    }
+  }
+
+  private updateChart() {
+    if (this.chart) {
+      this.chart.data = this.chartData() as any;
+      this.chart.update();
+    }
+  }
 
   private formatDate(dateStr: string): string {
     const d = new Date(dateStr);
