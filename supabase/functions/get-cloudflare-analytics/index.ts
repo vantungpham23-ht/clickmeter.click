@@ -75,19 +75,13 @@ serve(async (req) => {
       });
     }
 
-    // 6. Chuẩn hóa thời gian để always to >= from
-    // date_from: "YYYY-MM-DD"
-    const fromDate = (date_from ?? new Date().toISOString().slice(0,10));
+    // 6. Chuẩn hóa thời gian đầu vào
+    const fromDate = (date_from ?? new Date().toISOString().slice(0,10)); // YYYY-MM-DD
     const from = `${fromDate}T00:00:00Z`;
     let to = new Date().toISOString();
-    if (new Date(to).getTime() < new Date(from).getTime()) {
-      to = `${fromDate}T23:59:59Z`;
-    }
+    if (new Date(to) < new Date(from)) to = `${fromDate}T23:59:59Z`;
 
-    // 7. Chuẩn bị path lọc
-    const pathVar = site.filter_path && site.filter_path !== "/" ? site.filter_path : null;
-
-    // 8. Tạo helper gọi CF GraphQL
+    // 7. Tạo helper gọi CF GraphQL
     async function callCF(query: string, variables: Record<string, unknown>) {
       const resp = await fetch(CF_GRAPHQL, {
         method: "POST",
@@ -98,103 +92,93 @@ serve(async (req) => {
       return { ok: resp.ok, payload };
     }
 
-    // 9. Tạo 3 "ứng viên" truy vấn và thử lần lượt đến khi cái nào thành công
-    // A) Adaptive + fields kiểu cũ
-    const qA = `
-    query($zone:String!,$from:Time!,$to:Time!,$path:String){
-      viewer{ zones(filter:{zoneTag:$zone}){
-        httpRequestsAdaptiveGroups(
-          limit:2000,
-          filter:{ datetime_geq:$from, datetime_leq:$to ${pathVar ? ", clientRequestPath:$path" : ""} }
-        ){
-          dimensions{ datetime ${pathVar ? ", clientRequestPath" : ""} }
-          sum{ requests cachedRequests bytes cachedBytes }
-        }
-      }}}
-    `;
-
-    // B) Adaptive + fields kiểu mới
-    const qB = `
-    query($zone:String!,$from:Time!,$to:Time!,$path:String){
-      viewer{ zones(filter:{zoneTag:$zone}){
-        httpRequestsAdaptiveGroups(
-          limit:2000,
-          filter:{ datetime_geq:$from, datetime_leq:$to ${pathVar ? ", clientRequestPath:$path" : ""} }
-        ){
-          dimensions{ datetime ${pathVar ? ", clientRequestPath" : ""} }
-          sum{ count cachedCount uncachedCount bytes }
-        }
-      }}}
-    `;
-
-    // C) 1dGroups (theo ngày) – khi adaptive không hợp lệ
-    const qC = `
+    // 8. Nếu site.filter_path === "/" (không lọc path) → dùng 1dGroups (nhanh, rẻ)
+    const qDaily = `
     query($zone:String!,$from:Date!,$to:Date!){
-      viewer{ zones(filter:{zoneTag:$zone}){
-        httpRequests1dGroups(
-          limit:31,
-          filter:{ date_geq:$from, date_leq:$to }
-        ){
-          dimensions{ date }
-          sum{ requests bytes }
+      viewer {
+        zones(filter:{ zoneTag:$zone }) {
+          httpRequests1dGroups(
+            limit: 31,
+            filter:{ date_geq:$from, date_leq:$to }
+          ){
+            dimensions { date }
+            sum { requests cachedRequests bytes }
+          }
         }
-      }}}
-    `;
+      }
+    }`;
 
-    const varsA: Record<string,unknown> = { zone: site.cloudflare_zone_id, from, to };
-    if (pathVar) varsA.path = pathVar;
-    const varsB = varsA;
-    const varsC = { zone: site.cloudflare_zone_id, from: fromDate, to: fromDate }; // 1 ngày
+    const varsDaily = { zone: site.cloudflare_zone_id, from: fromDate, to: fromDate };
 
-    // Thử lần lượt
-    let used = "A"; 
-    let res = await callCF(qA, varsA);
+    // 9. Nếu filter_path khác "/" → dùng Adaptive + lọc path
+    const qAdaptive = `
+    query($zone:String!,$from:Time!,$to:Time!,$path:String){
+      viewer {
+        zones(filter:{ zoneTag:$zone }) {
+          httpRequestsAdaptiveGroups(
+            limit: 2000,
+            filter:{ datetime_geq:$from, datetime_leq:$to, clientRequestPath:$path }
+          ){
+            dimensions { datetime clientRequestPath }
+            sum { requests cachedRequests bytes }
+          }
+        }
+      }
+    }`;
+    const varsAdaptive = { zone: site.cloudflare_zone_id, from, to, path: site.filter_path };
 
-    function hasUnknownFieldError(p:any){
-      return Array.isArray(p?.errors) && p.errors.some((e:any)=>String(e?.message||"").includes("unknown field"));
+    // 10. Thực thi: nếu site.filter_path === "/" → gọi qDaily; ngược lại gọi qAdaptive
+    let queryUsed: string;
+    let res: any;
+
+    if (site.filter_path === "/") {
+      queryUsed = "daily";
+      res = await callCF(qDaily, varsDaily);
+    } else {
+      queryUsed = "adaptive";
+      res = await callCF(qAdaptive, varsAdaptive);
     }
 
-    if (!res.ok || hasUnknownFieldError(res.payload)) {
-      used = "B";
-      res = await callCF(qB, varsB);
-    }
-    if (!res.ok || hasUnknownFieldError(res.payload)) {
-      used = "C";
-      res = await callCF(qC, varsC);
-    }
-
-    // 10. Chuẩn hoá dữ liệu về dạng thống nhất
-    function normalize(payload:any){
+    // 11. Chuẩn hóa output để dashboard dễ vẽ
+    function normalizeRows(payload: any) {
       const z = payload?.data?.viewer?.zones?.[0];
       const groups = z?.httpRequestsAdaptiveGroups ?? z?.httpRequests1dGroups ?? [];
-      const items = groups.map((g:any)=>{
+      
+      return groups.map((g: any) => {
         const d = g.dimensions || {};
         const s = g.sum || {};
-        // lấy được gì thì map về
-        const total = s.requests ?? s.count ?? (typeof s.cachedCount==="number" && typeof s.uncachedCount==="number" ? s.cachedCount + s.uncachedCount : null);
-        const cached = s.cachedRequests ?? s.cachedCount ?? null;
-        return {
-          datetime: d.datetime ?? d.date ?? null,
-          path: d.clientRequestPath ?? null,
-          totalRequests: total,
-          cachedRequests: cached,
-          bytes: s.bytes ?? s.edgeResponseBytes ?? s.cachedBytes ?? null
-        };
+        
+        if (queryUsed === "daily") {
+          // Nếu daily: map về { label: d.date, total: s.requests, cached: s.cachedRequests, bytes: s.bytes }
+          return {
+            label: d.date,
+            total: s.requests,
+            cached: s.cachedRequests,
+            bytes: s.bytes
+          };
+        } else {
+          // Nếu adaptive: map về { label: d.datetime, path: d.clientRequestPath, total: s.requests, cached: s.cachedRequests, bytes: s.bytes }
+          return {
+            label: d.datetime,
+            path: d.clientRequestPath,
+            total: s.requests,
+            cached: s.cachedRequests,
+            bytes: s.bytes
+          };
+        }
       });
-      return { items };
     }
 
-    // 11. Console.log an toàn
-    console.log("Query used:", used, "from:", from, "to:", to, "path:", pathVar);
+    // 12. Console.log an toàn
+    console.log("Query used:", queryUsed, "from:", from, "to:", to);
 
-    // 12. Trả về response
+    // 13. Trả JSON
     const body = {
       site_id: site.id,
       filter_path: site.filter_path,
       from, to,
-      query_used: used,
-      cloudflare: res.payload,
-      normalized: res.payload?.data ? normalize(res.payload) : null
+      rows: res.payload?.data ? normalizeRows(res.payload) : [],
+      raw: res.payload
     };
     return new Response(JSON.stringify(body), { 
       status: res.ok ? 200 : 502, 

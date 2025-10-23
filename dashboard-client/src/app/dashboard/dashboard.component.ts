@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AnalyticsService } from '../analytics.service';
 import { AuthService } from '../auth.service';
+import Chart from 'chart.js/auto';
 
 interface Site {
   id: number;
@@ -15,24 +16,13 @@ interface AnalyticsData {
   filter_path: string;
   from: string;
   to: string;
-  cloudflare: {
-    data?: {
-      viewer?: {
-        zones?: Array<{
-          httpRequestsAdaptiveGroups?: Array<{
-            dimensions: { datetime: string; clientRequestPath?: string };
-            sum: { 
-              count: number; 
-              bytes: number; 
-              cachedCount: number; 
-              uncachedCount: number;
-              edgeResponseBytes: number;
-            };
-          }>;
-        }>;
-      };
-    };
-  };
+  rows?: Array<{
+    label: string;
+    total: number;
+    cached: number;
+    bytes: number;
+  }>;
+  raw?: any;
 }
 
 @Component({
@@ -42,13 +32,16 @@ interface AnalyticsData {
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, AfterViewInit {
+  @ViewChild('trafficChart', { static: false }) chartRef!: ElementRef<HTMLCanvasElement>;
+  
   sites: Site[] = [];
   selectedSiteId: number | null = null;
   dateFrom: string = '';
   analyticsData: AnalyticsData | null = null;
   isLoading: boolean = false;
   errorMessage: string = '';
+  chart: Chart | null = null;
 
   constructor(
     private analyticsService: AnalyticsService,
@@ -61,6 +54,10 @@ export class DashboardComponent implements OnInit {
     const date = new Date();
     date.setDate(date.getDate() - 7);
     this.dateFrom = date.toISOString().split('T')[0];
+  }
+
+  ngAfterViewInit() {
+    this.initializeChart();
   }
 
   async loadSites() {
@@ -89,6 +86,7 @@ export class DashboardComponent implements OnInit {
         this.selectedSiteId, 
         this.dateFrom
       );
+      this.updateChart();
     } catch (error) {
       console.error('Error loading analytics:', error);
       this.errorMessage = 'Không thể tải dữ liệu analytics';
@@ -111,35 +109,111 @@ export class DashboardComponent implements OnInit {
   }
 
   getTotalRequests(): number {
-    if (!this.analyticsData?.['cloudflare']?.['data']?.['viewer']?.['zones']?.[0]?.['httpRequestsAdaptiveGroups']) {
-      return 0;
-    }
-    return this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
-      .reduce((total: number, group: any) => total + (group.sum?.count || 0), 0);
+    if (!this.analyticsData?.rows) return 0;
+    return this.analyticsData.rows.reduce((total, row) => total + row.total, 0);
   }
 
   getTotalBytes(): string {
-    if (!this.analyticsData?.['cloudflare']?.['data']?.['viewer']?.['zones']?.[0]?.['httpRequestsAdaptiveGroups']) {
-      return '0 B';
-    }
-    const totalBytes = this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
-      .reduce((total: number, group: any) => total + (group.sum?.bytes || 0), 0);
+    if (!this.analyticsData?.rows) return '0 MB';
+    const totalBytes = this.analyticsData.rows.reduce((total, row) => total + row.bytes, 0);
     return this.formatBytes(totalBytes);
   }
 
   getCachedRequests(): number {
-    if (!this.analyticsData?.['cloudflare']?.['data']?.['viewer']?.['zones']?.[0]?.['httpRequestsAdaptiveGroups']) {
-      return 0;
-    }
-    return this.analyticsData['cloudflare']['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
-      .reduce((total: number, group: any) => total + (group.sum?.cachedCount || 0), 0);
+    if (!this.analyticsData?.rows) return 0;
+    return this.analyticsData.rows.reduce((total, row) => total + row.cached, 0);
+  }
+
+  getCacheHitRatio(): number {
+    const total = this.getTotalRequests();
+    const cached = this.getCachedRequests();
+    if (total === 0) return 0;
+    return Math.round((cached / total) * 100);
   }
 
   private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
+    if (bytes === 0) return '0 MB';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  private initializeChart() {
+    if (this.chartRef) {
+      this.chart = new Chart(this.chartRef.nativeElement, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: 'Requests',
+            data: [],
+            borderColor: '#3B82F6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointBackgroundColor: '#3B82F6',
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              },
+              ticks: {
+                color: '#64748b',
+                font: {
+                  family: 'Inter, sans-serif'
+                }
+              }
+            },
+            y: {
+              grid: {
+                color: '#f1f5f9'
+              },
+              ticks: {
+                color: '#64748b',
+                font: {
+                  family: 'Inter, sans-serif'
+                }
+              }
+            }
+          },
+          animation: {
+            duration: 1000,
+            easing: 'easeInOutQuart'
+          }
+        }
+      });
+    }
+  }
+
+  private updateChart() {
+    if (this.chart && this.analyticsData?.rows) {
+      const labels = this.analyticsData.rows.map(row => {
+        // Format date for display
+        const date = new Date(row.label);
+        return date.toLocaleDateString('vi-VN', { month: 'short', day: 'numeric' });
+      });
+      
+      const data = this.analyticsData.rows.map(row => row.total);
+      
+      this.chart.data.labels = labels;
+      this.chart.data.datasets[0].data = data;
+      this.chart.update('active');
+    }
   }
 }
