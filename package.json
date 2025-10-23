@@ -13,5 +13,8 @@
   },
   "devDependencies": {
     "supabase": "^2.53.6"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.76.1"
   }
 }
