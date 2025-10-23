@@ -26,7 +26,6 @@
     "@swimlane/ngx-charts": "^23.0.1",
     "chart.js": "^4.5.1",
     "express": "^4.18.2",
-    "ng2-charts": "^8.0.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.14.10"
