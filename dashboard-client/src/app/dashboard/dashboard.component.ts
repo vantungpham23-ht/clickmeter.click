@@ -1,9 +1,9 @@
-import { Component, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AnalyticsService } from '../analytics.service';
 import { AuthService } from '../auth.service';
-import Chart from 'chart.js/auto';
+import { TrafficOverviewComponent } from '../components/traffic-overview/traffic-overview.component';
 
 interface Site {
   id: number;
@@ -16,24 +16,31 @@ interface AnalyticsData {
   filter_path: string;
   from: string;
   to: string;
+  totals?: {
+    requests: number;
+    cached: number;
+    bytes: number;
+  };
   rows?: Array<{
     label: string;
     total: number;
     cached: number;
     bytes: number;
   }>;
-  raw?: any;
+  raw?: {
+    totals: any;
+    chart: any;
+  };
 }
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrafficOverviewComponent],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
-export class DashboardComponent implements OnInit, AfterViewInit {
-  @ViewChild('trafficChart', { static: false }) chartRef!: ElementRef<HTMLCanvasElement>;
+export class DashboardComponent implements OnInit {
   
   sites: Site[] = [];
   selectedSiteId: number | null = null;
@@ -41,7 +48,11 @@ export class DashboardComponent implements OnInit, AfterViewInit {
   analyticsData: AnalyticsData | null = null;
   isLoading: boolean = false;
   errorMessage: string = '';
-  chart: Chart | null = null;
+  
+  // Properties for TrafficOverview component
+  rows: any[] = [];
+  response: any;
+  selectedSite: any;
 
   constructor(
     private analyticsService: AnalyticsService,
@@ -54,10 +65,6 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     const date = new Date();
     date.setDate(date.getDate() - 7);
     this.dateFrom = date.toISOString().split('T')[0];
-  }
-
-  ngAfterViewInit() {
-    this.initializeChart();
   }
 
   async loadSites() {
@@ -86,7 +93,11 @@ export class DashboardComponent implements OnInit, AfterViewInit {
         this.selectedSiteId, 
         this.dateFrom
       );
-      this.updateChart();
+      
+      // Set properties for TrafficOverview component
+      this.response = this.analyticsData;
+      this.rows = this.analyticsData?.rows ?? [];
+      this.selectedSite = this.sites.find(s => s.id === this.selectedSiteId);
     } catch (error) {
       console.error('Error loading analytics:', error);
       this.errorMessage = 'Không thể tải dữ liệu analytics';
@@ -109,19 +120,16 @@ export class DashboardComponent implements OnInit, AfterViewInit {
   }
 
   getTotalRequests(): number {
-    if (!this.analyticsData?.rows) return 0;
-    return this.analyticsData.rows.reduce((total, row) => total + row.total, 0);
+    return this.analyticsData?.totals?.requests ?? 0;
   }
 
   getTotalBytes(): string {
-    if (!this.analyticsData?.rows) return '0 MB';
-    const totalBytes = this.analyticsData.rows.reduce((total, row) => total + row.bytes, 0);
+    const totalBytes = this.analyticsData?.totals?.bytes ?? 0;
     return this.formatBytes(totalBytes);
   }
 
   getCachedRequests(): number {
-    if (!this.analyticsData?.rows) return 0;
-    return this.analyticsData.rows.reduce((total, row) => total + row.cached, 0);
+    return this.analyticsData?.totals?.cached ?? 0;
   }
 
   getCacheHitRatio(): number {
@@ -139,81 +147,4 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
-  private initializeChart() {
-    if (this.chartRef) {
-      this.chart = new Chart(this.chartRef.nativeElement, {
-        type: 'line',
-        data: {
-          labels: [],
-          datasets: [{
-            label: 'Requests',
-            data: [],
-            borderColor: '#3B82F6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            borderWidth: 2,
-            fill: true,
-            tension: 0.4,
-            pointBackgroundColor: '#3B82F6',
-            pointBorderColor: '#ffffff',
-            pointBorderWidth: 2,
-            pointRadius: 4,
-            pointHoverRadius: 6
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: false
-            }
-          },
-          scales: {
-            x: {
-              grid: {
-                display: false
-              },
-              ticks: {
-                color: '#64748b',
-                font: {
-                  family: 'Inter, sans-serif'
-                }
-              }
-            },
-            y: {
-              grid: {
-                color: '#f1f5f9'
-              },
-              ticks: {
-                color: '#64748b',
-                font: {
-                  family: 'Inter, sans-serif'
-                }
-              }
-            }
-          },
-          animation: {
-            duration: 1000,
-            easing: 'easeInOutQuart'
-          }
-        }
-      });
-    }
-  }
-
-  private updateChart() {
-    if (this.chart && this.analyticsData?.rows) {
-      const labels = this.analyticsData.rows.map(row => {
-        // Format date for display
-        const date = new Date(row.label);
-        return date.toLocaleDateString('vi-VN', { month: 'short', day: 'numeric' });
-      });
-      
-      const data = this.analyticsData.rows.map(row => row.total);
-      
-      this.chart.data.labels = labels;
-      this.chart.data.datasets[0].data = data;
-      this.chart.update('active');
-    }
-  }
 }
