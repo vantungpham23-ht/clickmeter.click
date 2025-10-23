@@ -199,7 +199,7 @@
 // Stats Grid
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   gap: 24px;
   margin-bottom: 24px;
 }
@@ -403,6 +403,12 @@
 }
 
 // Responsive Design
+@media (max-width: 1600px) {
+  .stats-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
 @media (max-width: 1400px) {
   .stats-grid {
     grid-template-columns: repeat(4, 1fr);

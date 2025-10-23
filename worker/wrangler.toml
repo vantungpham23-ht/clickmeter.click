@@ -1,0 +1,7 @@
+name = "redirect-and-log"
+main = "worker.js"
+compatibility_date = "2024-05-01"
+
+[vars]
+SUPABASE_URL = "https://tkzeotjknumllqvkgkzk.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRremVvdGprbnVtbGxxdmtna3prIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNDI2MDcsImV4cCI6MjA3NjcxODYwN30.wZaLVeyk399CzmLLYOIx0jhDqdYnCQgHadPqZ5NQZU4"

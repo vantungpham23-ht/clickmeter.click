@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AnalyticsService } from '../analytics.service';
 import { AuthService } from '../auth.service';
+import { ClickStatsService } from '../services/click-stats.service';
 
 interface Site {
   id: number;
@@ -71,10 +72,19 @@ export class DashboardComponent implements OnInit {
   
   // Normalized history for chart
   normalizedHistory: any[] = [];
+  
+  // Click stats from cf_logs
+  clicks24h = 0;
+  clicksAll = 0;
+  
+  // Cố định theo cấu hình hiện tại
+  readonly SITE_ID = '900e85ff-2536-44ea-bcac-a90a0acb7ada';
+  readonly PATH = '/link1';
 
   constructor(
     private analyticsService: AnalyticsService,
-    public authService: AuthService
+    public authService: AuthService,
+    private clickStatsService: ClickStatsService
   ) {}
 
   async ngOnInit() {
@@ -83,6 +93,9 @@ export class DashboardComponent implements OnInit {
     const date = new Date();
     date.setDate(date.getDate() - 7);
     this.dateFrom = date.toISOString().split('T')[0];
+    
+    // Load click stats
+    this.loadClickStats();
   }
 
   async loadSites() {
@@ -95,6 +108,18 @@ export class DashboardComponent implements OnInit {
       console.error('Error loading sites:', error);
       this.errorMessage = 'Không thể tải danh sách site';
     }
+  }
+
+  loadClickStats() {
+    this.clickStatsService.get(this.SITE_ID, this.PATH).subscribe({
+      next: (r) => {
+        this.clicks24h = r?.clicks_24h ?? 0;
+        this.clicksAll = r?.clicks_all ?? 0;
+      },
+      error: (error) => {
+        console.error('Error loading click stats:', error);
+      }
+    });
   }
 
   async loadAnalytics() {
