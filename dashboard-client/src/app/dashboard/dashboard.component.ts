@@ -21,6 +21,11 @@ interface AnalyticsData {
     cached: number;
     bytes: number;
   };
+  totals_all_time?: {
+    requests: number;
+    cached: number;
+    bytes: number;
+  };
   rows?: Array<{
     label: string;
     total: number;
@@ -53,6 +58,9 @@ export class DashboardComponent implements OnInit {
   rows: any[] = [];
   response: any;
   selectedSite: any;
+  
+  // All-time totals
+  totalsAll: any = { requests: 0, cached: 0, bytes: 0 };
 
   constructor(
     private analyticsService: AnalyticsService,
@@ -98,6 +106,9 @@ export class DashboardComponent implements OnInit {
       this.response = this.analyticsData;
       this.rows = this.analyticsData?.rows ?? [];
       this.selectedSite = this.sites.find(s => s.id === this.selectedSiteId);
+      
+      // Set all-time totals
+      this.totalsAll = this.analyticsData?.totals_all_time ?? { requests: 0, cached: 0, bytes: 0 };
     } catch (error) {
       console.error('Error loading analytics:', error);
       this.errorMessage = 'Không thể tải dữ liệu analytics';
