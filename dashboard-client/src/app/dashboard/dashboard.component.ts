@@ -3,8 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AnalyticsService } from '../analytics.service';
 import { AuthService } from '../auth.service';
-import { TrafficOverviewComponent } from '../components/traffic-overview/traffic-overview.component';
-import { NormalizedChartComponent } from '../components/normalized-chart/normalized-chart.component';
 
 interface Site {
   id: number;
@@ -47,7 +45,7 @@ interface AnalyticsData {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, TrafficOverviewComponent, NormalizedChartComponent],
+  imports: [CommonModule, FormsModule],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })

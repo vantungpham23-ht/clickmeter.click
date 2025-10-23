@@ -137,17 +137,56 @@
 
     <!-- Chart Section -->
     <div class="chart-section" *ngIf="analyticsData">
-      <div class="charts-grid">
-        <app-traffic-overview
-          [rows]="rows"
-          [siteName]="selectedSite?.site_name || '—'"
-          [fromISO]="response?.from"
-          [toISO]="response?.to">
-        </app-traffic-overview>
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-header">
+            <i class="info-icon">📊</i>
+            <h3>Traffic Overview</h3>
+          </div>
+          <div class="info-content">
+            <div class="info-item">
+              <span class="info-label">Site:</span>
+              <span class="info-value">{{ selectedSite?.site_name || '—' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Filter Path:</span>
+              <span class="info-value">{{ analyticsData?.filter_path || '/' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Date Range:</span>
+              <span class="info-value">{{ response?.from | date:'short' }} - {{ response?.to | date:'short' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Data Points:</span>
+              <span class="info-value">{{ rows.length }} records</span>
+            </div>
+          </div>
+        </div>
         
-        <app-normalized-chart
-          [history]="normalizedHistory">
-        </app-normalized-chart>
+        <div class="info-card">
+          <div class="info-header">
+            <i class="info-icon">✨</i>
+            <h3>Normalized Clicks</h3>
+          </div>
+          <div class="info-content">
+            <div class="info-item">
+              <span class="info-label">24h Current:</span>
+              <span class="info-value highlight">{{ normalized24h | number }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">History Records:</span>
+              <span class="info-value">{{ normalizedHistory.length }} days</span>
+            </div>
+            <div class="info-item" *ngIf="normalizedHistory.length > 0">
+              <span class="info-label">Latest Date:</span>
+              <span class="info-value">{{ normalizedHistory[0]?.click_date | date:'short' }}</span>
+            </div>
+            <div class="info-item" *ngIf="normalizedHistory.length > 1">
+              <span class="info-label">Previous:</span>
+              <span class="info-value">{{ normalizedHistory[1]?.clicks_24h | number }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
