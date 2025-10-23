@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AnalyticsService } from '../analytics.service';
 import { AuthService } from '../auth.service';
 import { TrafficOverviewComponent } from '../components/traffic-overview/traffic-overview.component';
+import { NormalizedChartComponent } from '../components/normalized-chart/normalized-chart.component';
 
 interface Site {
   id: number;
@@ -26,6 +27,11 @@ interface AnalyticsData {
     cached: number;
     bytes: number;
   };
+  normalized_24h?: number;
+  normalized_history?: Array<{
+    click_date: string;
+    clicks_24h: number;
+  }>;
   rows?: Array<{
     label: string;
     total: number;
@@ -41,7 +47,7 @@ interface AnalyticsData {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, TrafficOverviewComponent],
+  imports: [CommonModule, FormsModule, TrafficOverviewComponent, NormalizedChartComponent],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
@@ -61,6 +67,12 @@ export class DashboardComponent implements OnInit {
   
   // All-time totals
   totalsAll: any = { requests: 0, cached: 0, bytes: 0 };
+  
+  // Normalized 24h clicks
+  normalized24h: number = 0;
+  
+  // Normalized history for chart
+  normalizedHistory: any[] = [];
 
   constructor(
     private analyticsService: AnalyticsService,
@@ -109,6 +121,12 @@ export class DashboardComponent implements OnInit {
       
       // Set all-time totals
       this.totalsAll = this.analyticsData?.totals_all_time ?? { requests: 0, cached: 0, bytes: 0 };
+      
+      // Set normalized 24h clicks
+      this.normalized24h = this.analyticsData?.normalized_24h ?? 0;
+      
+      // Set normalized history for chart
+      this.normalizedHistory = this.analyticsData?.normalized_history ?? [];
     } catch (error) {
       console.error('Error loading analytics:', error);
       this.errorMessage = 'Không thể tải dữ liệu analytics';

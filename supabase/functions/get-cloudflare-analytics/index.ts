@@ -184,17 +184,115 @@ serve(async (req) => {
       }
     }
 
-    // 13. Console.log an toàn
+    // 13. NEW: tính "chuẩn hoá (24h gần nhất)" với cache logic
+    let normalized_24h = 0;
+    
+    // === Kiểm tra cache trước khi gọi Cloudflare ===
+    const { data: cached } = await supabase
+      .from('cf_normalized_clicks')
+      .select('clicks_24h, created_at')
+      .eq('site_id', site.id)
+      .eq('path', site.filter_path || '/')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (cached && new Date().getTime() - new Date(cached.created_at).getTime() < 30 * 60 * 1000) {
+      normalized_24h = cached.clicks_24h;
+      console.log("Using cached normalized_24h:", normalized_24h);
+    } else {
+      // Gọi Cloudflare API để lấy dữ liệu mới
+      try {
+        const Q_NORMALIZED_24H = `
+        query($zone:String!, $path:String!, $from:Time!, $to:Time!) {
+          viewer {
+            zones(filter:{ zoneTag: $zone }) {
+              httpRequestsAdaptiveGroups(
+                limit: 2000,
+                filter:{
+                  datetime_geq:$from,
+                  datetime_leq:$to,
+                  clientRequestPath:$path,
+                  clientRequestMethod:"GET",
+                  responseStatus_geq:300,
+                  responseStatus_lt:400
+                }
+              ) {
+                sum { requests }
+              }
+            }
+          }
+        }`;
+
+        const now = new Date();
+        const from24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+        const resp24h = await fetch(CF_GRAPHQL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${CF_TOKEN}`
+          },
+          body: JSON.stringify({
+            query: Q_NORMALIZED_24H,
+            variables: {
+              zone: site.cloudflare_zone_id,
+              path: site.filter_path || "/",
+              from: from24h.toISOString(),
+              to: now.toISOString()
+            }
+          })
+        });
+        
+        const json24h = await resp24h.json();
+        const groups24h = json24h?.data?.viewer?.zones?.[0]?.httpRequestsAdaptiveGroups ?? [];
+        normalized_24h = groups24h.reduce((sum: number, g: any) => sum + (g?.sum?.requests ?? 0), 0);
+        
+        console.log("Normalized 24h query:", resp24h.ok, "clicks:", normalized_24h);
+        
+        // === Lưu dữ liệu normalized vào Supabase cache table ===
+        try {
+          const clickDate = new Date().toISOString().slice(0,10);
+          await supabase.from('cf_normalized_clicks').upsert({
+            site_id: site.id,
+            path: site.filter_path || '/',
+            click_date: clickDate,
+            clicks_24h: normalized_24h,
+            created_at: new Date().toISOString()
+          }, { onConflict: 'site_id,path,click_date' });
+          console.log("Cached normalized_24h:", normalized_24h);
+        } catch (err) {
+          console.error("Cache save failed", err);
+        }
+      } catch (e) {
+        console.log("Normalized 24h error:", e.message);
+        normalized_24h = 0;
+      }
+    }
+
+    // 14. Lấy lịch sử 7 ngày gần nhất để vẽ biểu đồ
+    const { data: normalizedHistory } = await supabase
+      .from('cf_normalized_clicks')
+      .select('click_date, clicks_24h')
+      .eq('site_id', site.id)
+      .eq('path', site.filter_path || '/')
+      .order('click_date', { ascending: false })
+      .limit(7);
+
+    // 15. Console.log an toàn
     console.log("Totals query:", resTotals.ok, "Chart query:", resChart.ok, "pathVar:", pathVar);
     console.log("All-time totals:", totals_all_time);
+    console.log("Normalized history:", normalizedHistory?.length || 0, "days");
 
-    // 14. Response
+    // 16. Response
     return new Response(JSON.stringify({
       site_id: site.id, 
       filter_path: site.filter_path, 
       from, to,
       totals,       // luôn là tổng toàn zone trong range
       totals_all_time,   // tổng all-time lấy từ DB
+      normalized_24h,   // chuẩn hoá (24h gần nhất) - GET requests với status 3xx
+      normalized_history: normalizedHistory ?? [], // lịch sử 7 ngày gần nhất
       rows,         // theo path nếu có, ngược lại theo ngày
       raw: { totals: payloadTotals, chart: payloadChart }
     }), { 

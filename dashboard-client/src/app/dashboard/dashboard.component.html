@@ -123,16 +123,32 @@
           <div class="stat-title">ALL-TIME REQUESTS</div>
         </div>
       </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">
+          <i class="icon">✨</i>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{{ normalized24h | number }}</div>
+          <div class="stat-title">CHUẨN HOÁ (24H GẦN NHẤT)</div>
+        </div>
+      </div>
     </div>
 
     <!-- Chart Section -->
     <div class="chart-section" *ngIf="analyticsData">
-      <app-traffic-overview
-        [rows]="rows"
-        [siteName]="selectedSite?.site_name || '—'"
-        [fromISO]="response?.from"
-        [toISO]="response?.to">
-      </app-traffic-overview>
+      <div class="charts-grid">
+        <app-traffic-overview
+          [rows]="rows"
+          [siteName]="selectedSite?.site_name || '—'"
+          [fromISO]="response?.from"
+          [toISO]="response?.to">
+        </app-traffic-overview>
+        
+        <app-normalized-chart
+          [history]="normalizedHistory">
+        </app-normalized-chart>
+      </div>
     </div>
 
     <!-- No Data State -->
