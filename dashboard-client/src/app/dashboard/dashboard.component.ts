@@ -100,9 +100,17 @@ export class DashboardComponent implements OnInit {
 
   async loadSites() {
     try {
+      console.log('Loading sites...');
       this.sites = await this.analyticsService.getMySites();
+      console.log('Sites loaded:', this.sites);
+      
       if (this.sites.length > 0) {
         this.selectedSiteId = this.sites[0].id;
+        console.log('Selected site ID:', this.selectedSiteId);
+        // Tự động load analytics sau khi có site
+        await this.loadAnalytics();
+      } else {
+        console.log('No sites found');
       }
     } catch (error) {
       console.error('Error loading sites:', error);

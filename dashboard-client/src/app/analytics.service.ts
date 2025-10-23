@@ -56,7 +56,12 @@ export class AnalyticsService {
       'sites-refresh',
       async () => {
         const { data: { session } } = await this.supabase!.auth.getSession();
-        if (!session) return [];
+        console.log('Current session:', session?.user?.email);
+        
+        if (!session) {
+          console.log('No session found');
+          return [];
+        }
 
         const { data, error } = await this.supabase!
           .from('sites')
@@ -67,6 +72,8 @@ export class AnalyticsService {
           console.error('Error fetching sites:', error);
           return [];
         }
+        
+        console.log('Sites found:', data);
         return data;
       },
       {
