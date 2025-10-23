@@ -80,6 +80,7 @@ serve(async (req) => {
     const from = `${fromDate}T00:00:00Z`;
     let to = new Date().toISOString();
     if (new Date(to) < new Date(from)) to = `${fromDate}T23:59:59Z`;
+    const pathVar = site.filter_path !== '/' ? site.filter_path : null;
 
     // 7. Tạo helper gọi CF GraphQL
     async function callCF(query: string, variables: Record<string, unknown>) {
@@ -92,29 +93,27 @@ serve(async (req) => {
       return { ok: resp.ok, payload };
     }
 
-    // 8. Nếu site.filter_path === "/" (không lọc path) → dùng 1dGroups (nhanh, rẻ)
-    const qDaily = `
+    // 8. Query A - Totals toàn zone (KHÔNG lọc path, theo ngày)
+    const qTotals = `
     query($zone:String!,$from:Date!,$to:Date!){
-      viewer {
-        zones(filter:{ zoneTag:$zone }) {
-          httpRequests1dGroups(
-            limit: 31,
-            filter:{ date_geq:$from, date_leq:$to }
-          ){
-            dimensions { date }
-            sum { requests cachedRequests bytes }
-          }
+      viewer { zones(filter:{zoneTag:$zone}) {
+        httpRequests1dGroups(limit: 31, filter:{date_geq:$from, date_leq:$to}) {
+          dimensions { date }
+          sum { requests cachedRequests bytes }
         }
-      }
+      } }
     }`;
+    const varsTotals = { zone: site.cloudflare_zone_id, from: fromDate, to: fromDate };
 
-    const varsDaily = { zone: site.cloudflare_zone_id, from: fromDate, to: fromDate };
+    // 9. Query B - Chart (tuỳ pathVar)
+    let qChart: string;
+    let varsChart: Record<string, unknown>;
 
-    // 9. Nếu filter_path khác "/" → dùng Adaptive + lọc path
-    const qAdaptive = `
-    query($zone:String!,$from:Time!,$to:Time!,$path:String){
-      viewer {
-        zones(filter:{ zoneTag:$zone }) {
+    if (pathVar != null) {
+      // Adaptive + lọc path theo thời gian
+      qChart = `
+      query($zone:String!,$from:Time!,$to:Time!,$path:String){
+        viewer { zones(filter:{zoneTag:$zone}) {
           httpRequestsAdaptiveGroups(
             limit: 2000,
             filter:{ datetime_geq:$from, datetime_leq:$to, clientRequestPath:$path }
@@ -122,66 +121,67 @@ serve(async (req) => {
             dimensions { datetime clientRequestPath }
             sum { requests cachedRequests bytes }
           }
-        }
-      }
-    }`;
-    const varsAdaptive = { zone: site.cloudflare_zone_id, from, to, path: site.filter_path };
-
-    // 10. Thực thi: nếu site.filter_path === "/" → gọi qDaily; ngược lại gọi qAdaptive
-    let queryUsed: string;
-    let res: any;
-
-    if (site.filter_path === "/") {
-      queryUsed = "daily";
-      res = await callCF(qDaily, varsDaily);
+        } }
+      }`;
+      varsChart = { zone: site.cloudflare_zone_id, from, to, path: pathVar };
     } else {
-      queryUsed = "adaptive";
-      res = await callCF(qAdaptive, varsAdaptive);
+      // 1dGroups (nhanh, rẻ)
+      qChart = `
+      query($zone:String!,$from:Date!,$to:Date!){
+        viewer { zones(filter:{zoneTag:$zone}) {
+          httpRequests1dGroups(limit:31, filter:{date_geq:$from, date_leq:$to}){
+            dimensions { date }
+            sum { requests cachedRequests bytes }
+          }
+        } }
+      }`;
+      varsChart = { zone: site.cloudflare_zone_id, from: fromDate, to: fromDate };
     }
 
-    // 11. Chuẩn hóa output để dashboard dễ vẽ
-    function normalizeRows(payload: any) {
-      const z = payload?.data?.viewer?.zones?.[0];
-      const groups = z?.httpRequestsAdaptiveGroups ?? z?.httpRequests1dGroups ?? [];
-      
-      return groups.map((g: any) => {
-        const d = g.dimensions || {};
-        const s = g.sum || {};
-        
-        if (queryUsed === "daily") {
-          // Nếu daily: map về { label: d.date, total: s.requests, cached: s.cachedRequests, bytes: s.bytes }
-          return {
-            label: d.date,
-            total: s.requests,
-            cached: s.cachedRequests,
-            bytes: s.bytes
-          };
-        } else {
-          // Nếu adaptive: map về { label: d.datetime, path: d.clientRequestPath, total: s.requests, cached: s.cachedRequests, bytes: s.bytes }
-          return {
-            label: d.datetime,
-            path: d.clientRequestPath,
-            total: s.requests,
-            cached: s.cachedRequests,
-            bytes: s.bytes
-          };
-        }
-      });
-    }
+    // 10. Gọi Cloudflare
+    const resTotals = await callCF(qTotals, varsTotals);
+    const resChart = await callCF(qChart, varsChart);
+
+    // 11. Chuẩn hóa
+    function sumReq(s: any) { return s?.requests ?? 0; }
+    function sumCached(s: any) { return s?.cachedRequests ?? 0; }
+    function sumBytes(s: any) { return s?.bytes ?? 0; }
+
+    const payloadTotals = resTotals.payload;
+    const payloadChart = resChart.payload;
+
+    const totalsGroups = payloadTotals?.data?.viewer?.zones?.[0]?.httpRequests1dGroups ?? [];
+    const totals = totalsGroups.reduce((a: any, g: any) => {
+      a.requests += sumReq(g.sum); 
+      a.cached += sumCached(g.sum); 
+      a.bytes += sumBytes(g.sum); 
+      return a;
+    }, { requests: 0, cached: 0, bytes: 0 });
+
+    const chartGroups = payloadChart?.data?.viewer?.zones?.[0]?.httpRequestsAdaptiveGroups
+                     ?? payloadChart?.data?.viewer?.zones?.[0]?.httpRequests1dGroups ?? [];
+
+    const rows = chartGroups.map((g: any) => ({
+      label: g.dimensions?.datetime ?? g.dimensions?.date ?? null,
+      path: g.dimensions?.clientRequestPath ?? null,
+      total: sumReq(g.sum), 
+      cached: sumCached(g.sum), 
+      bytes: sumBytes(g.sum)
+    }));
 
     // 12. Console.log an toàn
-    console.log("Query used:", queryUsed, "from:", from, "to:", to);
+    console.log("Totals query:", resTotals.ok, "Chart query:", resChart.ok, "pathVar:", pathVar);
 
-    // 13. Trả JSON
-    const body = {
-      site_id: site.id,
-      filter_path: site.filter_path,
+    // 13. Response
+    return new Response(JSON.stringify({
+      site_id: site.id, 
+      filter_path: site.filter_path, 
       from, to,
-      rows: res.payload?.data ? normalizeRows(res.payload) : [],
-      raw: res.payload
-    };
-    return new Response(JSON.stringify(body), { 
-      status: res.ok ? 200 : 502, 
+      totals,       // luôn là tổng toàn zone trong range
+      rows,         // theo path nếu có, ngược lại theo ngày
+      raw: { totals: payloadTotals, chart: payloadChart }
+    }), { 
+      status: (resTotals.ok && resChart.ok) ? 200 : 502, 
       headers: { ...corsHeaders, "Content-Type": "application/json" } 
     });
 
